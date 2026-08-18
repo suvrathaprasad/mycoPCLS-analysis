@@ -1,0 +1,41 @@
+name: rnaseq-pipeline
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  # --- pipeline orchestration ---
+  - nextflow
+  - openjdk=17
+
+  # --- RNA-seq preprocessing, alignment and QC ---
+  - star
+  - trim-galore
+  - fastqc
+  - subread
+  - multiqc
+
+  # --- differential expression ---
+  - bioconductor-deseq2          # core DE analysis
+  - bioconductor-apeglm          # log fold-change shrinkage - not currently called, kept for future use
+
+  # --- plotting ---
+  - bioconductor-pcatools        # PCA + scree/loadings plots, standard for RNAseq QC 
+  - r-pheatmap                  
+  - bioconductor-complexheatmap  # more flexible/annotated heatmaps if pheatmap's too limited
+  - r-rcolorbrewer               # colour palettes for heatmaps/plots 
+  - r-ggrepel                    # non-overlapping labels on volcano/PCA plots
+  - bioconductor-enhancedvolcano # ready-made volcano plots from DESeq2 output
+
+  # --- functional annotation (GO/KEGG/GSEA) ---
+  - r-base=4.3
+  - bioconductor-clusterprofiler
+  - bioconductor-keggrest
+  - bioconductor-biomart
+  - bioconductor-annotationforge
+  - bioconductor-enrichplot
+  - bioconductor-org.bt.eg.db
+
+  # --- general ---
+  - r-dplyr
+  - r-ggplot2

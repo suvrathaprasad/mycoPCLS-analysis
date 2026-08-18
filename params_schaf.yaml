@@ -1,0 +1,10 @@
+# params_schaf.yaml — sheep run
+
+samplesheet: "samplesheet_schaf.csv"        # columns: sample,fastq_1,fastq_2
+fasta:       "ref/schaf/Ovis_aries.ARS-UI_Ramb_v3.0.dna.toplevel.fa"
+gtf:         "ref/schaf/Ovis_aries.ARS-UI_Ramb_v3.0.116.gtf"
+star_index:  "ref/schaf/star_index/"           
+metadata:    "metadata_schaf.csv"
+species:     "schaf"
+strandedness: 0
+outdir:      "results/schaf"
