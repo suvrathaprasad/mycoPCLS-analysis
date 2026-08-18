@@ -1,0 +1,10 @@
+# params_rind.yaml — cattle run
+
+samplesheet: "samplesheet_rind.csv"        # columns: sample,fastq_1,fastq_2,strandedness
+fasta:       "ref/rind/Bos_taurus.ARS-UCD2.0.dna.toplevel.fa"
+gtf:         "ref/rind/Bos_taurus.ARS-UCD2.0.116.gtf"
+star_index:  "ref/rind/star_index"            
+metadata:    "metadata_rind.csv"
+species:     "rind"
+strandedness: 0
+outdir:      "results/rind"
