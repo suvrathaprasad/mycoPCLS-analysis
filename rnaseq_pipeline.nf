@@ -5,26 +5,26 @@ nextflow.enable.dsl = 2
  * End-to-end RNAseq pipeline with single conda env and no containers.
  *
  * Raw FASTQ -> FastQC -> Trim Galore -> STAR -> featureCounts -> MultiQC
- *                                                      \-> DESeq2 + PCA
- *
+ * \-> DESeq2 + PCA -> Enrichment                                                    
  *
  * Usage:
  *   nextflow run rnaseq_pipeline.nf \
  *     -c nextflow.config \
- *     -params-file params_<species>.yaml \
+ *     -params-file params_<species>.yaml \  "rind" or "schaf"
+ *     --custom_genes genes.tsv           \  optional
  *     -resume 
  */
 
-params.samplesheet  = null
-params.fasta        = null
-params.gtf          = null
-params.star_index   = null   // optional — built from fasta/gtf if not given
-params.metadata     = null
-params.species       = null  // "rind" or "schaf" output naming; must match
-                              // the uncommented design block in
-                              // bin/run_deseq2_pca.R
-params.strandedness = 0      // featureCounts -s — confirm strandedness of the experiment before trusting default
-params.outdir        = "results"
+params.samplesheet      = null
+params.fasta            = null
+params.gtf              = null
+params.star_index       = null      // optional; built if not provided 
+params.metadata         = null
+params.species          = null      // "cattle" or "sheep" naming must match in R scripts in bin/
+params.strandedness     = 0         // featureCounts -s — confirm strandedness of the experiment before trusting default
+params.outdir           = "results" // folders inside are "rind" or "schaf"
+params.annotation_cache = "${projectDir}/ref/annotation_cache" // input path to annotation_cache from fetch_annotation_cache.R
+params.custom_genes     = null
 
 // -----------------------------------------------------------------------
 // 1. Raw read QC
@@ -179,9 +179,9 @@ process MULTIQC {
 }
 
 // ----------------------------------------------------------------------
-// 7. DESeq2 + PCA : species-specific design still lives in the R script
+// 7. PCA + DESEQ2 : species-specific design still lives in the R script
 // ----------------------------------------------------------------------
-process DESEQ2_PCA {
+process PCA_DESEQ2 {
     tag "${params.species}"
     publishDir "${params.outdir}/deseq2", mode: 'copy'
     cache true
@@ -193,7 +193,7 @@ process DESEQ2_PCA {
     output:
     path "PCA/pca_${params.species}.pdf"
     path "PCA/pca_${params.species}_technical_replicates.pdf"
-    path "PCA/dds_${params.species}_collapsed.rds"
+    path "PCA/dds_${params.species}_collapsed.rds", emit: pca_rds
     path "PCA/collapsed_metadata_${params.species}.csv"
     path "SECTION_6/*/dds_${params.species}_*_vs_*.rds"
     path "SECTION_6/*/${params.species}_*_DEGs.tsv"
@@ -206,15 +206,118 @@ process DESEQ2_PCA {
     path "SECTION_7/*/${params.species}_*_candidate_genes_all_DPI.tsv"
     path "SECTION_7/*/${params.species}_*_temporal_summary.tsv"
     path "SECTION_7/*/dds_${params.species}_*_vs_*.rds"
+    path "SECTION_7", emit: section7_dir
 
     script:
     """
-    run_deseq2_pca.R ${counts} ${metadata} ${params.species} .
+    run_pca_deseq2.R ${counts} ${metadata} ${params.species} .
     """
 }
 
-workflow {
+//-----------------------------------------------------------------------
+// !!!!! RUN fetch_annotation_cache.R TO PROCEED FURTHER !!!!!!!!!
+//-----------------------------------------------------------------------
 
+//------------------------------------------------------------------------
+// 8. Enrichment : GO/KEGG ORA + GSEA
+//------------------------------------------------------------------------
+process ENRICHMENT {
+    tag "${params.species}"
+    publishDir "${params.outdir}/deseq2", mode: 'copy'
+    cache true
+
+    input:
+    path section7_dir
+    path annotation_cache
+
+    output:
+    path "enrichment", emit: enrichment_dir
+
+    script:
+    """
+    run_enrichment.R . ${params.species} . ${annotation_cache}
+    """
+}
+
+//-------------------------------------------------------------------------
+// 9. Tables : flat, browsable TSVs from 7 & 8
+//-------------------------------------------------------------------------
+process TABLES {
+    tag "${params.species}"
+    publishDir "${params.outdir}/tables", mode: 'copy'
+    cache true
+
+    input:
+    path section7_dir
+    path enrichment_dir
+    path annotation_cache
+
+    output:
+    path "*.tsv", emit: tables_dir
+
+    script:
+    """
+    run_tables.R ${section7_dir} ${enrichment_dir} ${params.species} . ${annotation_cache}
+    """
+}
+
+//-----------------------------------------------------------------------------
+// 10. Plots : remake old ones & plot new ones
+//-----------------------------------------------------------------------------
+process PLOTS {
+    tag "${params.species}"
+    publishDir "${params.outdir}/plots", mode: 'copy'
+    cache true
+
+    input:
+    path section7_dir
+    path enrichment_dir
+    path annotation_cache
+    path tables_dir
+    path pca_rds
+
+    output:
+    path "*.pdf"
+    path "plots_data"
+
+    script:
+    """
+#   mkdir -p tables
+#   find . -maxdepth 1 -name '*.tsv' -exec cp {} tables/ \\;
+
+    run_plots.R ${section7_dir} ${enrichment_dir} ${params.species} . ${annotation_cache} ${tables_dir} ${pca_rds}
+    """
+}
+
+//-------------------------------------------------------------------------------
+// 11. Custom gene plots : generate plots for list of custom genes
+//-------------------------------------------------------------------------------
+process CUSTOM_PLOTS {
+    tag "${params.species}"
+    publishDir "${params.outdir}/custom_gene_plots", mode: 'copy'
+    cache true
+
+    input:
+    path custom_genes
+    path section7_dir
+    path annotation_cache
+
+    output:
+    path "*.pdf"
+    path "*.tsv"
+    path "custom_plots_data"
+
+    script:
+    """
+    run_plots_custom.R ${section7_dir} ${params.species} . ${annotation_cache} ${custom_genes}
+    """
+}
+
+//------------------------------------------------------------------------------
+// Workflow
+//------------------------------------------------------------------------------
+workflow {
+/*
     reads_ch = Channel
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
@@ -254,7 +357,7 @@ workflow {
     FEATURECOUNTS(all_bams_ch, gtf_ch)
 
     // ---- 6. DESeq2 + PCA ------------------------------------------------
-    DESEQ2_PCA(FEATURECOUNTS.out.counts, metadata_ch)
+    PCA_DESEQ2(FEATURECOUNTS.out.counts, metadata_ch)
 
     // ---- 7. MultiQC : everything with a log/report to aggregate -----------
     // Same reasoning as above, sort by filename so the input list order
@@ -267,4 +370,89 @@ workflow {
         .toSortedList { a, b -> a.name <=> b.name }
 
     MULTIQC(multiqc_inputs)
+
+    //---- 8. Enrichment -----------------------------------------------------
+    annotation_cache_ch = Channel
+        .fromPath("${projectDir}/ref/annotation_cache", type: 'dir', checkIfExists: true)
+        .first()
+    ENRICHMENT(PCA_DESEQ2.out.section7_dir, annotation_cache_ch)
+
+    //---- 9. Tables ---------------------------------------------------------
+    TABLES(PCA_DESEQ2.out.section7_dir, ENRICHMENT.out.enrichment_dir, annotation_cache_ch)
+
+    //---- 10. Plots ---------------------------------------------------------
+    PLOTS(PCA_DESEQ2.out.section7_dir, ENRICHMENT.out.enrichment_dir, annotation_cache_ch, TABLES.out.tables_dir, PCA_DESEQ2.out.pca_rds)
+    
+*/
+    // =====================================================================
+    // EXISTING RESULTS
+    // =====================================================================
+
+    section7_ch = Channel
+        .fromPath(
+            "${params.outdir}/deseq2/SECTION_7",
+            type: 'dir',
+            checkIfExists: true
+        )
+        .first()
+
+    enrichment_ch = Channel
+        .fromPath(
+            "${params.outdir}/deseq2/enrichment",
+            type: 'dir',
+            checkIfExists: true
+        )
+        .first()
+
+    tables_ch = Channel
+        .fromPath(
+            "${params.outdir}/tables",
+            type: 'dir',
+            checkIfExists: true
+        )
+        .first()
+
+    annotation_cache_ch = Channel
+        .fromPath(
+            "${projectDir}/ref/annotation_cache",
+            type: 'dir',
+            checkIfExists: true
+        )
+        .first()
+
+
+    pca_rds_ch = Channel
+        .fromPath(
+            "${params.outdir}/deseq2/PCA/dds_${params.species}_collapsed.rds",
+            checkIfExists: true
+        )
+        .first()
+
+    // =====================================================================
+    // ONLY PROCESSES THAT RUNS
+    // =====================================================================
+    
+    //---- 10. Plots ------------------------------
+    PLOTS(section7_ch, enrichment_ch, annotation_cache_ch, tables_ch, pca_rds_ch)
+ 
+    //---- 11. Custom plots -----------------------   
+    if (params.custom_genes) {
+
+        custom_genes_ch = Channel
+            .fromPath(params.custom_genes, checkIfExists: true)
+            .first()
+
+        CUSTOM_PLOTS(
+            custom_genes_ch,
+            section7_ch,
+            annotation_cache_ch,
+        )
+
+    } else {
+
+        log.info "No custom gene TSV was provided; no custom gene plots will be generated."
+
+    }
+
 }
+
