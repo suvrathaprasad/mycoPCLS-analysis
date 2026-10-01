@@ -5,6 +5,6 @@ fasta:       "ref/rind/Bos_taurus.ARS-UCD2.0.dna.toplevel.fa"
 gtf:         "ref/rind/Bos_taurus.ARS-UCD2.0.116.gtf"
 star_index:  "ref/rind/star_index"            
 metadata:    "metadata_rind.csv"
-species:     "rind"
+species:     "cattle"
 strandedness: 0
 outdir:      "results/rind"
