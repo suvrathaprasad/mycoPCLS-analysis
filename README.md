@@ -197,4 +197,4 @@ Located in `bin/` and `helpeR_scripts/`:
 - `helpeR_scripts/run_cross_species_comparison.R` - Cross-species pathway analysis
 
 ## Author
-Developed by Suvi (Suvratha Jayaprasad), Postdoc at Friedrich-Loeffler-Institut (FLI) Jena.
+Developed by Suvratha Jayaprasad, Postdoc at Friedrich-Loeffler-Institut (FLI) Jena.
