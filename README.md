@@ -188,7 +188,7 @@ See `rnaseq-pipeline-env.yml` for the complete conda environment specification, 
 - **Preprocessing**: FastQC, Trim Galore!, STAR, Subread, MultiQC
 - **Differential expression**: Bioconductor DESeq2, PCAtools
 - **Enrichment**: Bioconductor clusterProfiler, enrichplot, OrgDb packages
-- **Visualization**: ggplot2, ggrepel, pheatmap, ComplexHeatmap, RColorBrewer, enhancedvolcano, ggVennDiagram
+- **Visualization**: ggplot2, tidyr, ggrepel, pheatmap, ComplexHeatmap, RColorBrewer, enhancedvolcano, ggVennDiagram
 
 ## Related Scripts
 Located in `bin/` and `helpeR_scripts/`:
@@ -203,4 +203,4 @@ Located in `bin/` and `helpeR_scripts/`:
 - `helpeR_scripts/run_cross_species_comparison.R` - Cross-species pathway analysis
 
 ## Author
-Developed by Suvi (Suvratha Jayaprasad), Postdoc at Friedrich-Loeffler-Institut (FLI) Jena.
+Developed by Suvratha Jayaprasad, Postdoc at Friedrich-Loeffler-Institut (FLI) Jena.
