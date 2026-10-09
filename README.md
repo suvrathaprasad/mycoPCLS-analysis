@@ -22,7 +22,7 @@ This pipeline processes raw FASTQ files through the following stages:
 - **Single conda environment** - No containers required
 - **Nextflow orchestration** - Robust, reproducible workflow with `-resume` capability
 - **R-only analysis scripts** - All statistical analysis performed in R
-- **Species-specific handling** - Different annotation strategies for cattle (hybrid) and sheep (human ortholog-only)
+- **Species-specific handling** - Annotation strategy per species: currently cattle hybrid (direct + ortholog fallback) and sheep human ortholog-only; moving to human ortholog-only for all species (planned)
 - **Technical replicate-aware** - Properly handles the experimental design (1 biological unit per condition×dpi cell)
 - **Comprehensive outputs** - From raw QC to publication-ready figures and tables
 
@@ -35,11 +35,12 @@ This pipeline processes raw FASTQ files through the following stages:
 
 ### Setup
 1. Clone this repository
-2. Create the conda environment:
+2. Create the reference folders and place the genome FASTA and GTF there (`ref/` is not tracked in git), e.g. `ref/rind/`, `ref/schaf/`
+3. Create the conda environment:
    ```bash
    mamba env create -f rnaseq-pipeline-env.yml
    ```
-3. Activate the environment:
+4. Activate the environment:
    ```bash
    conda activate rnaseq-pipeline
    ```
@@ -69,14 +70,14 @@ Key parameters can be overridden via command line or in the YAML parameter files
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `--samplesheet` | CSV with sample information (sample, fastq_1, fastq_2) | `samplesheet_rind.csv` / `samplesheet_schaf.csv` |
-| `--fasta` | Reference genome FASTA | `ref/rind/Bos_taurus.ARS-UCD2.0.dna.toplevel.fa` / `ref/schaf/Ovis_ars.ARS-UI_Ramb_v3.0.dna.toplevel.fa` |
-| `--gtf` | Reference genome annotation GTF | `ref/rind/Bos_taurus.ARS-UCD2.0.116.gtf` / `ref/schaf/Ovis_ars.ARS-UI_Ramb_v3.0.116.gtf` |
+| `--fasta` | Reference genome FASTA | `ref/rind/Bos_taurus.ARS-UCD2.0.dna.toplevel.fa` / `ref/schaf/Ovis_aries.ARS-UI_Ramb_v3.0.dna.toplevel.fa` |
+| `--gtf` | Reference genome annotation GTF | `ref/rind/Bos_taurus.ARS-UCD2.0.116.gtf` / `ref/schaf/Ovis_aries.ARS-UI_Ramb_v3.0.116.gtf` |
 | `--star_index` | Pre-built STAR index (optional) | Built automatically if not provided |
 | `--metadata` | Experimental design metadata | `metadata_rind.csv` / `metadata_schaf.csv` |
 | `--species` | Species identifier (must match R scripts) | `"cattle"` / `"sheep"` |
 | `--strandedness` | RNA-seq strandedness (0=unstranded, 1=stranded, 2=reverse) | `0` |
 | `--outdir` | Base output directory | `results` (creates `results/rind/` or `results/schaf/`) |
-| `--annotation_cache` | Path to annotation cache directory | `${projectDir}/ref/annotation_cache` |
+| `--annotation_cache` | Not yet configurable: the pipeline currently reads the cache from `ref/annotation_cache` (fixed in `rnaseq_pipeline.nf`) | `${projectDir}/ref/annotation_cache` |
 | `--gene_list` | Optional TSV with gene IDs for custom plots | `null` |
 
 ### Example with Overrides
@@ -115,19 +116,19 @@ nextflow run rnaseq_pipeline.nf \
   - ORA (Over-Representation Analysis) and GSEA (Gene Set Enrichment Analysis)
   - GO (Gene Ontology) and KEGG pathways
   - Species-specific annotation strategy:
-    - Cattle: Hybrid approach (direct `org.Bt.eg.db` + human ortholog fallback)
+    - Cattle: Hybrid approach (direct `org.Bt.eg.db` + human ortholog fallback); being replaced by human ortholog-only (planned)
     - Sheep: Human ortholog-only approach (`org.Hs.eg.db`)
   - Uses precomputed annotation cache to avoid internet calls on compute nodes
 
 ### 5. Summarization & Visualization
 - **TABLES**: Flat TSV files for easy browsing:
-  1. `master_candidate_genes` - All candidates across comparisons
-  2. `comparison_summary` - Counts per comparison/dpi
-  3. `master_enrichment_ora` - All ORA hits
-  4. `temporal_trajectories` - log2FC across timepoints
-  5. `gsea_summary` - All GSEA results
-  6. `gene_pathway_crosswalk` - Gene-to-pathway mappings
-- **PLOTS**: Publication-ready visualizations:
+  1. `1_master_candidate_genes` - All candidates across comparisons
+  2. `2_comparison_summary` - Counts per comparison/dpi
+  3. `3_master_enrichment_ora` - All ORA hits
+  4. `4_gene_pathway_crosswalk` - Gene-to-pathway mappings
+  5. `5_temporal_trajectories` - log2FC across timepoints
+  6. `6_gsea_summary` - All GSEA results
+- **PLOTS**: Publication-ready visualizations (12 plot types; underlying data saved as RDS in `plots_data/` for later editing with `helpeR_scripts/modify_plots.R`). Main groups:
   1. PCA plots
   2. Heatmaps (top candidates)
   3. Volcano plots
@@ -150,7 +151,7 @@ results/
     ├── deseq2/               # DESeq2 and enrichment results
     │   ├── PCA/              # PCA plots and objects
     │   ├── enrichment/       # Functional enrichment results
-    │   │   ├── [comparison]/dpi[N]/{up,down}/  # ORA results
+    │   │   ├── [comparison]/dpi[N]/ORA/{up,down}/  # ORA results
     │   │   └── [comparison]/dpi[N]/GSEA/       # GSEA results
     │   └── ...               # DESeq2 exploratory outputs
     ├── tables/               # Summary TSV files
@@ -160,18 +161,21 @@ results/
 
 ## Annotation Cache
 The pipeline uses an annotation cache to avoid live BioMart/KEGG calls on HPC compute nodes:
-1. Run `fetch_annotation_cache.R` once per species to generate cache files:
+1. Run `fetch_annotation_cache.R` once per species (cattle, sheep, goat) into the **same** cache directory. Usage: `Rscript helpeR_scripts/fetch_annotation_cache.R <species> <cache_dir> [gene_ids_file]`. The optional third argument restricts the query to a list of gene IDs; without it, the whole genome is fetched:
    ```bash
    Rscript helpeR_scripts/fetch_annotation_cache.R cattle /path/to/cache
    Rscript helpeR_scripts/fetch_annotation_cache.R sheep /path/to/cache
+   Rscript helpeR_scripts/fetch_annotation_cache.R goat /path/to/cache
    ```
-2. The pipeline automatically uses the cache directory specified in parameters
+2. The pipeline uses the cache directory specified in parameters
 3. Cache includes:
    - Species-specific annotation maps (Ensembl ↔ Entrez ↔ gene symbols)
    - Shared KEGG pathway↔gene tables (`kegg_hsa.rds`)
    - Failed BioMart ID logs for troubleshooting
 
 ## Experimental Design Notes
+These notes describe the PCLS pilot experiment. The main multi-strain experiment and goat are planned.
+
 - **Technical replicates only**: 1 biological unit per condition×dpi cell
 - **Two sequencing runs per animal/dpi/condition**: Treated as technical replicates (not same library)
 - **No `collapseReplicates()`**: Runs kept as separate columns in DESeq2 analysis
@@ -183,8 +187,8 @@ See `rnaseq-pipeline-env.yml` for the complete conda environment specification, 
 - **Pipeline orchestration**: Nextflow, OpenJDK
 - **Preprocessing**: FastQC, Trim Galore!, STAR, Subread, MultiQC
 - **Differential expression**: Bioconductor DESeq2, PCAtools
-- **Enrichment**: Bioconductor clusterProfiler, enrichplot, AnnotationForge, OrgDb packages
-- **Visualization**: ggplot2, ggrepel, pheatmap, ComplexHeatmap, RColorBrewer, enhancedvolcano, ggbetween
+- **Enrichment**: Bioconductor clusterProfiler, enrichplot, OrgDb packages
+- **Visualization**: ggplot2, ggrepel, pheatmap, ComplexHeatmap, RColorBrewer, enhancedvolcano, ggVennDiagram
 
 ## Related Scripts
 Located in `bin/` and `helpeR_scripts/`:
@@ -194,7 +198,9 @@ Located in `bin/` and `helpeR_scripts/`:
 - `bin/run_plots.R` - Publication-ready plotting
 - `bin/run_plots_custom.R` - Custom gene list plots
 - `helpeR_scripts/fetch_annotation_cache.R` - Annotation cache generation
+- `helpeR_scripts/annotation_coverage_check.R` - Annotation coverage check
+- `helpeR_scripts/modify_plots.R` - Re-style plots from saved `plots_data/` RDS files
 - `helpeR_scripts/run_cross_species_comparison.R` - Cross-species pathway analysis
 
 ## Author
-Developed by Suvratha Jayaprasad, Postdoc at Friedrich-Loeffler-Institut (FLI) Jena.
+Developed by Suvi (Suvratha Jayaprasad), Postdoc at Friedrich-Loeffler-Institut (FLI) Jena.

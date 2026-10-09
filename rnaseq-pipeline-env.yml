@@ -21,7 +21,8 @@ dependencies:
 
   # --- plotting ---
   - bioconductor-pcatools        # PCA + scree/loadings plots, standard for RNAseq QC 
-  - r-pheatmap                  
+  - r-pheatmap                
+  - r-tidyr 
   - bioconductor-complexheatmap  # more flexible/annotated heatmaps if pheatmap's too limited
   - r-rcolorbrewer               # colour palettes for heatmaps/plots 
   - r-ggrepel                    # non-overlapping labels on volcano/PCA plots
